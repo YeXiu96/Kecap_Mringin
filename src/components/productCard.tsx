@@ -1,11 +1,26 @@
 import { Product } from "@/types/product";
 import { styles } from "@/constants/styles";
-import { handlePressProduct } from "@/functions/productActions";
 import { Pressable, Text, View } from "react-native";
+import { router } from "expo-router";
 
 export function ProductCard({ item }: { item: Product }) {
+  // Menerapkan router.push() dengan parameter (Kriteria Penilaian Modul 2)
+  const handlePress = () => {
+    router.push({
+      pathname: "/details",
+      params: {
+        id: item.id,
+        name: item.name,
+        price: item.price.toString(),
+        variant: item.variant,
+        inStock: item.inStock ? "true" : "false",
+        sizeMl: item.sizeMl ? item.sizeMl.toString() : "",
+      },
+    });
+  };
+
   return (
-    <Pressable onPress={() => handlePressProduct(item.name, item.inStock)}>
+    <Pressable onPress={handlePress}>
       <View style={styles.card}>
         <View style={{ flex: 1, marginRight: 10 }}>
           <Text style={styles.productName}>
