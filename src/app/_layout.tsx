@@ -14,7 +14,7 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerStyle: {
-            backgroundColor: '#78350f', // Cokelat tua khas Kecap Mringin
+            backgroundColor: '#78350f',
           },
           headerTintColor: '#ffffff',
           headerTitleStyle: {
@@ -33,6 +33,14 @@ export default function RootLayout() {
           name="details"
           options={{
             title: "Detail Produk",
+            headerBackTitle: "Kembali",
+          }}
+        />
+        {/* TUGAS 1: halaman data dari External API (Apify) */}
+        <Stack.Screen
+          name="market"
+          options={{
+            title: "Produk Kecap Mringin",
             headerBackTitle: "Kembali",
           }}
         />

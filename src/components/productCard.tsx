@@ -7,7 +7,7 @@ export function ProductCard({ item }: { item: Product }) {
   // Menerapkan router.push() dengan parameter (Kriteria Penilaian Modul 2)
   const handlePress = () => {
     router.push({
-      pathname: "/details",
+      pathname: "/details" as any,
       params: {
         id: item.id,
         name: item.name,
