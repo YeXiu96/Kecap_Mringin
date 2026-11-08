@@ -1,9 +1,21 @@
-import React from "react";
-import { View, Text, StyleSheet, Pressable, Alert, ScrollView } from "react-native";
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Alert,
+  ScrollView,
+  TextInput,
+  ActivityIndicator,
+  Switch,
+} from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { processOrderTransaction, validatePromoCode } from "@/services/orderService";
+import { PromoDiscount } from "@/types/order";
 
 export default function ProductDetailScreen() {
-  // Mengambil parameter dari route menggunakan hook useLocalSearchParams
+  // Mengambil parameter dari route menggunakan hook useLocalSearchParams (Modul 2)
   const params = useLocalSearchParams<{
     id?: string;
     name?: string;
@@ -16,6 +28,14 @@ export default function ProductDetailScreen() {
   const isAvailable = params.inStock === "true";
   const numericPrice = params.price ? Number(params.price) : 0;
 
+  // State untuk interaktivitas Pemesanan (Modul 1 & 3)
+  const [quantity, setQuantity] = useState(1);
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState<PromoDiscount | null>(null);
+  const [checkingPromo, setCheckingPromo] = useState(false);
+  const [isProcessingOrder, setIsProcessingOrder] = useState(false);
+  const [simulateServerReject, setSimulateServerReject] = useState(false);
+
   // 1. Menerapkan router.back() dan router.canGoBack() (Materi Modul 2)
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -25,7 +45,36 @@ export default function ProductDetailScreen() {
     }
   };
 
-  // 2. Menerapkan router.replace() (Materi Modul 2)
+  // ==========================================================================
+  // MODUL 3: PEMANGGILAN PROMISE DENGAN .then() DAN .catch() (Fitur Validasi Promo)
+  // Memanggil validatePromoCode() yang menggunakan new Promise((resolve, reject))
+  // ==========================================================================
+  const handleCheckPromo = () => {
+    setCheckingPromo(true);
+
+    // Pemanggilan fungsi Promise custom menggunakan .then() dan .catch()
+    validatePromoCode(promoInput)
+      .then((promoResult) => {
+        // Callback .then() dieksekusi jika Promise menghasilkan resolve()
+        setAppliedPromo(promoResult);
+        Alert.alert(
+          "Promo Berhasil Digunakan! 🎉",
+          `${promoResult.description}\nPotongan diskon ${promoResult.discountPercent}% berhasil diterapkan.`,
+        );
+      })
+      .catch((error: Error) => {
+        // Callback .catch() dieksekusi jika Promise menghasilkan reject()
+        setAppliedPromo(null);
+        Alert.alert("Promo Gagal ❌", error.message);
+      })
+      .finally(() => {
+        setCheckingPromo(false);
+      });
+  };
+
+  // ==========================================================================
+  // MODUL 3: PEMANGGILAN ASYNC FUNCTION & CHAINING .then().then() (Pemesanan)
+  // ==========================================================================
   const handleOrder = () => {
     if (!isAvailable) {
       Alert.alert("Stok Habis", "Maaf, produk ini sedang tidak tersedia.");
@@ -34,39 +83,82 @@ export default function ProductDetailScreen() {
 
     Alert.alert(
       "Konfirmasi Pemesanan",
-      `Apakah Anda ingin memesan ${params.name || "produk ini"} seharga Rp ${numericPrice.toLocaleString("id-ID")}?`,
+      `Pesan ${quantity}x ${params.name || "produk"}?\nEstimasi Total: Rp ${(
+        quantity * numericPrice * (appliedPromo ? (100 - appliedPromo.discountPercent) / 100 : 1)
+      ).toLocaleString("id-ID")}`,
       [
         { text: "Batal", style: "cancel" },
         {
-          text: "Pesan Sekarang",
+          text: "Proses Transaksi",
           onPress: () => {
-            Alert.alert(
-              "Pesanan Berhasil!",
-              "Pesanan Anda sedang diproses. Anda akan dialihkan ke halaman utama.",
-              [
-                {
-                  text: "OK",
-                  // Menggunakan router.replace() agar halaman detail di-replace dan tidak menumpuk di riwayat
-                  onPress: () => router.replace("/"),
-                },
-              ]
-            );
+            setIsProcessingOrder(true);
+
+            // 1. Memanggil Custom Async Function
+            processOrderTransaction({
+              productId: params.id || "1",
+              productName: params.name || "Kecap Mringin",
+              quantity,
+              unitPrice: numericPrice,
+              promoCode: appliedPromo?.code,
+              simulateFailure: simulateServerReject,
+            })
+              // 2. Chaining .then() Pertama: Memformat data struk yang di-resolve
+              .then((receipt) => {
+                const diskonInfo = receipt.discountAmount > 0
+                  ? `\nDiskon: -Rp ${receipt.discountAmount.toLocaleString("id-ID")}`
+                  : "";
+                return (
+                  `ID Pesanan: ${receipt.orderId}\n` +
+                  `Produk: ${receipt.productName} (${receipt.quantity} botol)\n` +
+                  `Subtotal: Rp ${receipt.subtotal.toLocaleString("id-ID")}` +
+                  diskonInfo + "\n" +
+                  `Total Bayar: Rp ${receipt.finalPrice.toLocaleString("id-ID")}\n` +
+                  `Waktu: ${receipt.timestamp}\n` +
+                  `Status: ${receipt.status}`
+                );
+              })
+              // 3. Chaining .then() Kedua: Menampilkan hasil struk ke antarmuka pengguna
+              .then((formattedReceipt) => {
+                Alert.alert(
+                  "Pesanan Berhasil Diproses! 🛒",
+                  formattedReceipt,
+                  [
+                    {
+                      text: "Kembali ke Katalog",
+                      // Modul 2: Menggunakan router.replace()
+                      onPress: () => router.replace("/"),
+                    },
+                  ],
+                );
+              })
+              // 4. .catch(): Menangkap reject() atau error dari Async Function
+              .catch((err: Error) => {
+                Alert.alert("Transaksi Ditolak ⚠️", err.message);
+              })
+              // 5. .finally(): Reset state loading saat Promise selesai
+              .finally(() => {
+                setIsProcessingOrder(false);
+              });
           },
         },
-      ]
+      ],
     );
   };
 
+  const calculatedSubtotal = quantity * numericPrice;
+  const discountVal = appliedPromo ? (calculatedSubtotal * appliedPromo.discountPercent) / 100 : 0;
+  const grandTotal = calculatedSubtotal - discountVal;
+
   return (
     <ScrollView style={detailStyles.container} contentContainerStyle={detailStyles.contentContainer}>
-      {/* Tombol Back */}
+      {/* Tombol Back (Modul 2) */}
       <Pressable onPress={handleBack} style={detailStyles.backButton}>
         <Text style={detailStyles.backButtonText}>← Kembali</Text>
       </Pressable>
 
       <Text style={detailStyles.pageTitle}>Detail Produk</Text>
 
-      {/* Card Info Produk */}
+      {/* Card Info Produk (Modul 1 & 2) */}
       <View style={detailStyles.card}>
         <Text style={detailStyles.title}>
           {params.name || "Kecap Mringin"} {params.sizeMl ? `(${params.sizeMl}ml)` : ""}
@@ -101,18 +193,120 @@ export default function ProductDetailScreen() {
         </Text>
       </View>
 
-      {/* Tombol Aksi */}
+      {/* ================================================================== */}
+      {/* CARD KELOLA PESANAN & ASYNCHRONOUS DEMO (MODUL 3) */}
+      {/* ================================================================== */}
+      <View style={detailStyles.card}>
+        <Text style={detailStyles.sectionTitle}>Atur Pemesanan (Modul 3 Async)</Text>
+
+        {/* Counter Kuantitas */}
+        <View style={detailStyles.quantityRow}>
+          <Text style={detailStyles.label}>Jumlah Botol:</Text>
+          <View style={detailStyles.counterBox}>
+            <Pressable
+              onPress={() => setQuantity((q) => Math.max(1, q - 1))}
+              style={detailStyles.counterBtn}
+            >
+              <Text style={detailStyles.counterBtnText}>−</Text>
+            </Pressable>
+            <Text style={detailStyles.quantityText}>{quantity}</Text>
+            <Pressable
+              onPress={() => setQuantity((q) => q + 1)}
+              style={detailStyles.counterBtn}
+            >
+              <Text style={detailStyles.counterBtnText}>+</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Form Kupon Promo (Demonstrasi .resolve() & .reject()) */}
+        <Text style={[detailStyles.label, { marginTop: 12 }]}>
+          Kupon Promo (Coba: <Text style={{ fontWeight: "700", color: "#ea580c" }}>MRINGIN20</Text>):
+        </Text>
+        <View style={detailStyles.promoRow}>
+          <TextInput
+            placeholder="Masukkan kode promo..."
+            placeholderTextColor="#9ca3af"
+            value={promoInput}
+            onChangeText={setPromoInput}
+            autoCapitalize="characters"
+            style={detailStyles.promoInput}
+          />
+          <Pressable
+            onPress={handleCheckPromo}
+            disabled={checkingPromo}
+            style={detailStyles.promoButton}
+          >
+            {checkingPromo ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <Text style={detailStyles.promoButtonText}>Terapkan</Text>
+            )}
+          </Pressable>
+        </View>
+
+        {appliedPromo && (
+          <View style={detailStyles.appliedBadge}>
+            <Text style={detailStyles.appliedText}>
+              ✓ {appliedPromo.description} (-{appliedPromo.discountPercent}%)
+            </Text>
+          </View>
+        )}
+
+        {/* Switch Pengujian Reject (Untuk kemudahan saat ditanya Asisten Demo) */}
+        <View style={detailStyles.switchRow}>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <Text style={detailStyles.switchLabel}>Simulasi Server Reject / Gagal</Text>
+            <Text style={detailStyles.switchSub}>Uji skenario .reject() & .catch() saat demo</Text>
+          </View>
+          <Switch
+            value={simulateServerReject}
+            onValueChange={setSimulateServerReject}
+            trackColor={{ false: "#d1d5db", true: "#ef4444" }}
+            thumbColor={simulateServerReject ? "#b91c1c" : "#f4f3f4"}
+          />
+        </View>
+
+        {/* Ringkasan Total */}
+        <View style={detailStyles.summaryBox}>
+          <View style={detailStyles.summaryLine}>
+            <Text style={detailStyles.summaryLabel}>Subtotal ({quantity} item):</Text>
+            <Text style={detailStyles.summaryValue}>Rp {calculatedSubtotal.toLocaleString("id-ID")}</Text>
+          </View>
+          {discountVal > 0 && (
+            <View style={detailStyles.summaryLine}>
+              <Text style={[detailStyles.summaryLabel, { color: "#16a34a" }]}>Potongan Promo:</Text>
+              <Text style={[detailStyles.summaryValue, { color: "#16a34a" }]}>-Rp {discountVal.toLocaleString("id-ID")}</Text>
+            </View>
+          )}
+          <View style={[detailStyles.summaryLine, { marginTop: 6, borderTopWidth: 1, borderTopColor: "#e5e7eb", paddingTop: 6 }]}>
+            <Text style={[detailStyles.summaryLabel, { fontWeight: "bold" }]}>Total Akhir:</Text>
+            <Text style={[detailStyles.summaryValue, { fontWeight: "bold", fontSize: 16, color: "#78350f" }]}>
+              Rp {grandTotal.toLocaleString("id-ID")}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Tombol Aksi Transaksi Async */}
       <Pressable
         onPress={handleOrder}
         style={[
           detailStyles.orderButton,
-          !isAvailable && detailStyles.disabledButton,
+          (!isAvailable || isProcessingOrder) && detailStyles.disabledButton,
         ]}
-        disabled={!isAvailable}
+        disabled={!isAvailable || isProcessingOrder}
       >
-        <Text style={detailStyles.orderButtonText}>
-          {isAvailable ? "Pesan Sekarang" : "Stok Tidak Tersedia"}
-        </Text>
+        {isProcessingOrder ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <ActivityIndicator color="#ffffff" size="small" />
+            <Text style={detailStyles.orderButtonText}>Menghubungi Server...</Text>
+          </View>
+        ) : (
+          <Text style={detailStyles.orderButtonText}>
+            {isAvailable ? "Pesan Sekarang (Async .then())" : "Stok Tidak Tersedia"}
+          </Text>
+        )}
       </Pressable>
     </ScrollView>
   );
@@ -197,12 +391,126 @@ const detailStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#374151",
-    marginBottom: 6,
+    marginBottom: 10,
   },
   description: {
     fontSize: 14,
     lineHeight: 22,
     color: "#4b5563",
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#4b5563",
+  },
+  quantityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginVertical: 6,
+  },
+  counterBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f3f4f6",
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  counterBtn: {
+    backgroundColor: "#78350f",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  counterBtnText: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  quantityText: {
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#451a03",
+  },
+  promoRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 6,
+  },
+  promoInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: "#1f2937",
+    backgroundColor: "#f9fafb",
+  },
+  promoButton: {
+    backgroundColor: "#78350f",
+    paddingHorizontal: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 8,
+  },
+  promoButtonText: {
+    color: "#ffffff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  appliedBadge: {
+    marginTop: 8,
+    backgroundColor: "#dcfce7",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  appliedText: {
+    color: "#15803d",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#fff7ed",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "#fed7aa",
+  },
+  switchLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#9a3412",
+  },
+  switchSub: {
+    fontSize: 11,
+    color: "#c2410c",
+  },
+  summaryBox: {
+    marginTop: 14,
+    backgroundColor: "#f9fafb",
+    padding: 12,
+    borderRadius: 8,
+  },
+  summaryLine: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginVertical: 2,
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: "#6b7280",
+  },
+  summaryValue: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1f2937",
   },
   orderButton: {
     backgroundColor: "#ea580c",
