@@ -9,10 +9,23 @@ import {
   TextInput,
   ActivityIndicator,
   Switch,
+  Platform,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { processOrderTransaction, validatePromoCode } from "@/services/orderService";
-import { PromoDiscount } from "@/types/order";
+import { OrderReceipt, PromoDiscount } from "@/types/order";
+
+// Helper agar Alert bekerja di Mobile maupun Web
+function showAlert(title: string, message: string, onOk?: () => void) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") {
+      window.alert(`${title}\n\n${message}`);
+    }
+    if (onOk) onOk();
+  } else {
+    Alert.alert(title, message, [{ text: "OK", onPress: onOk }]);
+  }
+}
 
 export default function ProductDetailScreen() {
   // Mengambil parameter dari route menggunakan hook useLocalSearchParams (Modul 2)
@@ -25,8 +38,9 @@ export default function ProductDetailScreen() {
     sizeMl?: string;
   }>();
 
-  const isAvailable = params.inStock === "true";
-  const numericPrice = params.price ? Number(params.price) : 0;
+  // Jika params.inStock tidak diberikan secara eksplisit "false", default-kan true
+  const isAvailable = params.inStock !== "false";
+  const numericPrice = params.price ? Number(params.price) : 15000;
 
   // State untuk interaktivitas Pemesanan (Modul 1 & 3)
   const [quantity, setQuantity] = useState(1);
@@ -35,6 +49,8 @@ export default function ProductDetailScreen() {
   const [checkingPromo, setCheckingPromo] = useState(false);
   const [isProcessingOrder, setIsProcessingOrder] = useState(false);
   const [simulateServerReject, setSimulateServerReject] = useState(false);
+  const [orderReceipt, setOrderReceipt] = useState<OrderReceipt | null>(null);
+  const [orderError, setOrderError] = useState<string | null>(null);
 
   // 1. Menerapkan router.back() dan router.canGoBack() (Materi Modul 2)
   const handleBack = () => {
@@ -57,7 +73,7 @@ export default function ProductDetailScreen() {
       .then((promoResult) => {
         // Callback .then() dieksekusi jika Promise menghasilkan resolve()
         setAppliedPromo(promoResult);
-        Alert.alert(
+        showAlert(
           "Promo Berhasil Digunakan! 🎉",
           `${promoResult.description}\nPotongan diskon ${promoResult.discountPercent}% berhasil diterapkan.`,
         );
@@ -65,7 +81,7 @@ export default function ProductDetailScreen() {
       .catch((error: Error) => {
         // Callback .catch() dieksekusi jika Promise menghasilkan reject()
         setAppliedPromo(null);
-        Alert.alert("Promo Gagal ❌", error.message);
+        showAlert("Promo Gagal ❌", error.message);
       })
       .finally(() => {
         setCheckingPromo(false);
@@ -77,72 +93,55 @@ export default function ProductDetailScreen() {
   // ==========================================================================
   const handleOrder = () => {
     if (!isAvailable) {
-      Alert.alert("Stok Habis", "Maaf, produk ini sedang tidak tersedia.");
+      showAlert("Stok Habis", "Maaf, produk ini sedang tidak tersedia.");
       return;
     }
 
-    Alert.alert(
-      "Konfirmasi Pemesanan",
-      `Pesan ${quantity}x ${params.name || "produk"}?\nEstimasi Total: Rp ${(
-        quantity * numericPrice * (appliedPromo ? (100 - appliedPromo.discountPercent) / 100 : 1)
-      ).toLocaleString("id-ID")}`,
-      [
-        { text: "Batal", style: "cancel" },
-        {
-          text: "Proses Transaksi",
-          onPress: () => {
-            setIsProcessingOrder(true);
+    setOrderError(null);
+    setOrderReceipt(null);
+    setIsProcessingOrder(true);
 
-            // 1. Memanggil Custom Async Function
-            processOrderTransaction({
-              productId: params.id || "1",
-              productName: params.name || "Kecap Mringin",
-              quantity,
-              unitPrice: numericPrice,
-              promoCode: appliedPromo?.code,
-              simulateFailure: simulateServerReject,
-            })
-              // 2. Chaining .then() Pertama: Memformat data struk yang di-resolve
-              .then((receipt) => {
-                const diskonInfo = receipt.discountAmount > 0
-                  ? `\nDiskon: -Rp ${receipt.discountAmount.toLocaleString("id-ID")}`
-                  : "";
-                return (
-                  `ID Pesanan: ${receipt.orderId}\n` +
-                  `Produk: ${receipt.productName} (${receipt.quantity} botol)\n` +
-                  `Subtotal: Rp ${receipt.subtotal.toLocaleString("id-ID")}` +
-                  diskonInfo + "\n" +
-                  `Total Bayar: Rp ${receipt.finalPrice.toLocaleString("id-ID")}\n` +
-                  `Waktu: ${receipt.timestamp}\n` +
-                  `Status: ${receipt.status}`
-                );
-              })
-              // 3. Chaining .then() Kedua: Menampilkan hasil struk ke antarmuka pengguna
-              .then((formattedReceipt) => {
-                Alert.alert(
-                  "Pesanan Berhasil Diproses! 🛒",
-                  formattedReceipt,
-                  [
-                    {
-                      text: "Kembali ke Katalog",
-                      // Modul 2: Menggunakan router.replace()
-                      onPress: () => router.replace("/"),
-                    },
-                  ],
-                );
-              })
-              // 4. .catch(): Menangkap reject() atau error dari Async Function
-              .catch((err: Error) => {
-                Alert.alert("Transaksi Ditolak ⚠️", err.message);
-              })
-              // 5. .finally(): Reset state loading saat Promise selesai
-              .finally(() => {
-                setIsProcessingOrder(false);
-              });
-          },
-        },
-      ],
-    );
+    // 1. Memanggil Custom Async Function
+    processOrderTransaction({
+      productId: params.id || "1",
+      productName: params.name || "Kecap Mringin",
+      quantity,
+      unitPrice: numericPrice,
+      promoCode: appliedPromo?.code,
+      simulateFailure: simulateServerReject,
+    })
+      // 2. Chaining .then() Pertama: Memformat data struk yang di-resolve
+      .then((receipt) => {
+        setOrderReceipt(receipt);
+        const diskonInfo = receipt.discountAmount > 0
+          ? `\nDiskon: -Rp ${receipt.discountAmount.toLocaleString("id-ID")}`
+          : "";
+        return (
+          `ID Pesanan: ${receipt.orderId}\n` +
+          `Produk: ${receipt.productName} (${receipt.quantity} botol)\n` +
+          `Subtotal: Rp ${receipt.subtotal.toLocaleString("id-ID")}` +
+          diskonInfo + "\n" +
+          `Total Bayar: Rp ${receipt.finalPrice.toLocaleString("id-ID")}\n` +
+          `Waktu: ${receipt.timestamp}\n` +
+          `Status: ${receipt.status}`
+        );
+      })
+      // 3. Chaining .then() Kedua: Menampilkan hasil struk ke antarmuka pengguna
+      .then((formattedReceipt) => {
+        showAlert(
+          "Pesanan Berhasil Diproses! 🛒",
+          formattedReceipt,
+        );
+      })
+      // 4. .catch(): Menangkap reject() atau error dari Async Function
+      .catch((err: Error) => {
+        setOrderError(err.message);
+        showAlert("Transaksi Ditolak ⚠️", err.message);
+      })
+      // 5. .finally(): Reset state loading saat Promise selesai
+      .finally(() => {
+        setIsProcessingOrder(false);
+      });
   };
 
   const calculatedSubtotal = quantity * numericPrice;
@@ -287,6 +286,39 @@ export default function ProductDetailScreen() {
           </View>
         </View>
       </View>
+
+      {/* STRUK HASIL TRANSAKSI VISUAL DI LAYAR (JIKA SUKSES) */}
+      {orderReceipt && (
+        <View style={detailStyles.receiptCard}>
+          <Text style={detailStyles.receiptTitle}>Struk Transaksi Berhasil! 🎉</Text>
+          <View style={detailStyles.divider} />
+          <Text style={detailStyles.receiptLine}>No. Pesanan: <Text style={detailStyles.receiptBold}>{orderReceipt.orderId}</Text></Text>
+          <Text style={detailStyles.receiptLine}>Produk: <Text style={detailStyles.receiptBold}>{orderReceipt.productName} ({orderReceipt.quantity} botol)</Text></Text>
+          <Text style={detailStyles.receiptLine}>Subtotal: Rp {orderReceipt.subtotal.toLocaleString("id-ID")}</Text>
+          {orderReceipt.discountAmount > 0 && (
+            <Text style={[detailStyles.receiptLine, { color: "#16a34a" }]}>Diskon: -Rp {orderReceipt.discountAmount.toLocaleString("id-ID")}</Text>
+          )}
+          <Text style={[detailStyles.receiptLine, { fontSize: 16, marginTop: 4 }]}>
+            Total Bayar: <Text style={[detailStyles.receiptBold, { color: "#15803d" }]}>Rp {orderReceipt.finalPrice.toLocaleString("id-ID")}</Text>
+          </Text>
+          <Text style={detailStyles.receiptLine}>Waktu: {orderReceipt.timestamp}</Text>
+          <Text style={detailStyles.receiptLine}>Status: <Text style={{ color: "#16a34a", fontWeight: "bold" }}>{orderReceipt.status}</Text></Text>
+          <Pressable
+            onPress={() => router.replace("/")}
+            style={detailStyles.backCatalogBtn}
+          >
+            <Text style={detailStyles.backCatalogText}>Kembali ke Katalog</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* TAMPILAN ERROR VISUAL DI LAYAR (JIKA REJECT) */}
+      {orderError && (
+        <View style={detailStyles.errorCard}>
+          <Text style={detailStyles.errorCardTitle}>Transaksi Ditolak Server ⚠️</Text>
+          <Text style={detailStyles.errorCardText}>{orderError}</Text>
+        </View>
+      )}
 
       {/* Tombol Aksi Transaksi Async */}
       <Pressable
@@ -518,6 +550,7 @@ const detailStyles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     elevation: 2,
+    marginTop: 10,
   },
   disabledButton: {
     backgroundColor: "#9ca3af",
@@ -526,5 +559,58 @@ const detailStyles = StyleSheet.create({
     color: "#ffffff",
     fontWeight: "bold",
     fontSize: 16,
+  },
+  receiptCard: {
+    backgroundColor: "#ecfdf5",
+    borderWidth: 1,
+    borderColor: "#a7f3d0",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  receiptTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#065f46",
+    textAlign: "center",
+  },
+  receiptLine: {
+    fontSize: 14,
+    color: "#374151",
+    marginVertical: 2,
+  },
+  receiptBold: {
+    fontWeight: "bold",
+    color: "#111827",
+  },
+  backCatalogBtn: {
+    backgroundColor: "#059669",
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  backCatalogText: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+  errorCard: {
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  errorCardTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#b91c1c",
+  },
+  errorCardText: {
+    fontSize: 14,
+    color: "#7f1d1d",
+    marginTop: 4,
   },
 });
