@@ -14,6 +14,7 @@ export function ProductCard({ item }: { item: Product }) {
         price: item.price.toString(),
         variant: item.variant,
         inStock: item.inStock ? "true" : "false",
+        stock: item.stock.toString(),
         sizeMl: item.sizeMl ? item.sizeMl.toString() : "",
       },
     });
@@ -41,7 +42,7 @@ export function ProductCard({ item }: { item: Product }) {
               alignSelf: "flex-start",
             }}
           >
-            Varian: {item.variant} • {item.inStock ? "Tersedia" : "Stok Habis"}
+            Varian: {item.variant} • {item.inStock ? `Stok: ${item.stock}` : "Stok Habis (0)"}
           </Text>
         </View>
 

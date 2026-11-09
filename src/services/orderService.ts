@@ -1,3 +1,4 @@
+import { productData } from "@/constants/productData";
 import { OrderReceipt, OrderRequest, PromoDiscount } from "@/types/order";
 
 // ============================================================================
@@ -9,7 +10,7 @@ export function delay(ms: number): Promise<void> {
 }
 
 // ============================================================================
-// 2. FUNGSI PROMISE DENGAN .resolve() DAN .reject()
+// 2. FUNGSI PROMISE DENGAN .resolve() DAN .reject() (Validasi Promo & Stok)
 // Mendemonstrasikan new Promise((resolve, reject) => { ... })
 // ============================================================================
 export function validatePromoCode(code: string): Promise<PromoDiscount> {
@@ -46,22 +47,56 @@ export function validatePromoCode(code: string): Promise<PromoDiscount> {
   });
 }
 
+// Fungsi Promise untuk mengecek dan mengurangi stok produk secara nyata
+export function validateAndDeductStock(productId: string, quantity: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      const product = productData.find((p) => p.id === productId);
+
+      if (!product) {
+        reject(new Error("Produk tidak ditemukan di gudang."));
+        return;
+      }
+
+      if (quantity <= 0) {
+        reject(new Error("Jumlah pesanan minimal harus 1 botol."));
+        return;
+      }
+
+      // Jika stok habis (0), panggil reject()
+      if (!product.inStock || product.stock <= 0) {
+        reject(new Error(`Maaf, stok ${product.name} saat ini sedang habis (0 botol)!`));
+        return;
+      }
+
+      // Jika jumlah pesanan melebihi stok yang tersedia, panggil reject()
+      if (quantity > product.stock) {
+        reject(
+          new Error(
+            `Stok tidak mencukupi! Anda memesan ${quantity} botol, tetapi sisa stok ${product.name} hanya ${product.stock} botol.`,
+          ),
+        );
+        return;
+      }
+
+      // Jika stok mencukupi, kurangi stok dan panggil resolve() dengan sisa stok terbaru
+      product.stock -= quantity;
+      product.inStock = product.stock > 0;
+      resolve(product.stock);
+    }, 800);
+  });
+}
+
 // ============================================================================
 // 3. CUSTOM ASYNC FUNCTION (async & await)
 // Function buatan sendiri ber-keyword 'async' yang mengembalikan Promise<OrderReceipt>
 // ============================================================================
 export async function processOrderTransaction(order: OrderRequest): Promise<OrderReceipt> {
-  // Menunggu (await) simulasi network request
-  await delay(1200);
+  // Menunggu (await) simulasi koneksi ke server
+  await delay(500);
 
-  // Jika opsi simulasi kegagalan diaktifkan (misal demo stok server kosong)
-  if (order.simulateFailure) {
-    throw new Error("Transaksi ditolak server: Stok gudang mendadak habis!");
-  }
-
-  if (order.quantity <= 0) {
-    throw new Error("Jumlah pesanan minimal harus 1 botol.");
-  }
+  // Mengecek ketersediaan stok dan mengurangi stok jika mencukupi (akan throw/reject jika kurang/habis)
+  const remainingStock = await validateAndDeductStock(order.productId, order.quantity);
 
   const subtotal = order.quantity * order.unitPrice;
   let discountAmount = 0;
@@ -84,6 +119,7 @@ export async function processOrderTransaction(order: OrderRequest): Promise<Orde
     orderId: `KM-${Date.now().toString().slice(-6)}`,
     productName: order.productName,
     quantity: order.quantity,
+    remainingStock,
     subtotal,
     discountAmount,
     finalPrice,

@@ -26,9 +26,22 @@ export async function fetchMarketProducts(): Promise<MarketProduct[]> {
   // Endpoint: item dataset milik run TERAKHIR yang BERHASIL dari Actor ini
   const url = `${BASE_URL}/acts/${ACTOR_ID}/runs/last/dataset/items?status=SUCCEEDED&clean=true&format=json`;
 
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     headers: { Authorization: `Bearer ${TOKEN}` }, // token dikirim lewat header
   });
+
+  // Jika run terakhir sudah kedaluwarsa/terhapus (HTTP 404), jalankan ulang Actor secara otomatis
+  if (response.status === 404) {
+    const syncRunUrl = `${BASE_URL}/acts/${ACTOR_ID}/run-sync-get-dataset-items?clean=true&format=json`;
+    response = await fetch(syncRunUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ language: "en", query: "soy sauce" }),
+    });
+  }
 
   // fetch() tidak otomatis error untuk status 401/404/500, jadi dicek manual
   if (response.status === 401) {

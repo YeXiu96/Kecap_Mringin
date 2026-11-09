@@ -8,10 +8,11 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
-  Switch,
   Platform,
+  Modal,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { productData } from "@/constants/productData";
 import { processOrderTransaction, validatePromoCode } from "@/services/orderService";
 import { OrderReceipt, PromoDiscount } from "@/types/order";
 
@@ -35,22 +36,31 @@ export default function ProductDetailScreen() {
     price?: string;
     variant?: string;
     inStock?: string;
+    stock?: string;
     sizeMl?: string;
   }>();
 
-  // Jika params.inStock tidak diberikan secara eksplisit "false", default-kan true
-  const isAvailable = params.inStock !== "false";
+  const foundProduct = productData.find((p) => p.id === (params.id || "1"));
+  const initialStock = foundProduct
+    ? foundProduct.stock
+    : params.stock !== undefined
+      ? Number(params.stock)
+      : params.inStock === "false"
+        ? 0
+        : 5;
   const numericPrice = params.price ? Number(params.price) : 15000;
 
-  // State untuk interaktivitas Pemesanan (Modul 1 & 3)
+  // State untuk interaktivitas Pemesanan & Stok (Modul 1 & 3)
+  const [currentStock, setCurrentStock] = useState(initialStock);
   const [quantity, setQuantity] = useState(1);
   const [promoInput, setPromoInput] = useState("");
   const [appliedPromo, setAppliedPromo] = useState<PromoDiscount | null>(null);
   const [checkingPromo, setCheckingPromo] = useState(false);
   const [isProcessingOrder, setIsProcessingOrder] = useState(false);
-  const [simulateServerReject, setSimulateServerReject] = useState(false);
   const [orderReceipt, setOrderReceipt] = useState<OrderReceipt | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
+
+  const isAvailable = currentStock > 0;
 
   // 1. Menerapkan router.back() dan router.canGoBack() (Materi Modul 2)
   const handleBack = () => {
@@ -90,13 +100,10 @@ export default function ProductDetailScreen() {
 
   // ==========================================================================
   // MODUL 3: PEMANGGILAN ASYNC FUNCTION & CHAINING .then().then() (Pemesanan)
+  // Jika stok mencukupi -> resolve() & stok berkurang
+  // Jika pesanan melebihi stok atau stok habis -> reject() & ditangkap .catch()
   // ==========================================================================
   const handleOrder = () => {
-    if (!isAvailable) {
-      showAlert("Stok Habis", "Maaf, produk ini sedang tidak tersedia.");
-      return;
-    }
-
     setOrderError(null);
     setOrderReceipt(null);
     setIsProcessingOrder(true);
@@ -108,10 +115,10 @@ export default function ProductDetailScreen() {
       quantity,
       unitPrice: numericPrice,
       promoCode: appliedPromo?.code,
-      simulateFailure: simulateServerReject,
     })
-      // 2. Chaining .then() Pertama: Memformat data struk yang di-resolve
+      // 2. Chaining .then() Pertama: Update sisa stok & format data struk yang di-resolve
       .then((receipt) => {
+        setCurrentStock(receipt.remainingStock);
         setOrderReceipt(receipt);
         const diskonInfo = receipt.discountAmount > 0
           ? `\nDiskon: -Rp ${receipt.discountAmount.toLocaleString("id-ID")}`
@@ -119,6 +126,7 @@ export default function ProductDetailScreen() {
         return (
           `ID Pesanan: ${receipt.orderId}\n` +
           `Produk: ${receipt.productName} (${receipt.quantity} botol)\n` +
+          `Sisa Stok: ${receipt.remainingStock} botol\n` +
           `Subtotal: Rp ${receipt.subtotal.toLocaleString("id-ID")}` +
           diskonInfo + "\n" +
           `Total Bayar: Rp ${receipt.finalPrice.toLocaleString("id-ID")}\n` +
@@ -126,17 +134,14 @@ export default function ProductDetailScreen() {
           `Status: ${receipt.status}`
         );
       })
-      // 3. Chaining .then() Kedua: Menampilkan hasil struk ke antarmuka pengguna
-      .then((formattedReceipt) => {
-        showAlert(
-          "Pesanan Berhasil Diproses! 🛒",
-          formattedReceipt,
-        );
+      // 3. Chaining .then() Kedua: Menampilkan hasil struk ke Modal antarmuka pengguna
+      .then((_formattedReceipt) => {
+        setOrderError(null);
       })
-      // 4. .catch(): Menangkap reject() atau error dari Async Function
+      // 4. .catch(): Menangkap reject() saat pesanan melebihi stok atau stok habis
       .catch((err: Error) => {
+        setOrderReceipt(null);
         setOrderError(err.message);
-        showAlert("Transaksi Ditolak ⚠️", err.message);
       })
       // 5. .finally(): Reset state loading saat Promise selesai
       .finally(() => {
@@ -173,7 +178,7 @@ export default function ProductDetailScreen() {
               },
             ]}
           >
-            {isAvailable ? "Tersedia" : "Stok Habis"}
+            {isAvailable ? `Tersedia • Stok: ${currentStock} botol` : "Stok Habis (0 botol)"}
           </Text>
           <Text style={detailStyles.variantText}>
             Varian: <Text style={{ fontWeight: "700" }}>{params.variant || "-"}</Text>
@@ -252,20 +257,6 @@ export default function ProductDetailScreen() {
           </View>
         )}
 
-        {/* Switch Pengujian Reject (Untuk kemudahan saat ditanya Asisten Demo) */}
-        <View style={detailStyles.switchRow}>
-          <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text style={detailStyles.switchLabel}>Simulasi Server Reject / Gagal</Text>
-            <Text style={detailStyles.switchSub}>Uji skenario .reject() & .catch() saat demo</Text>
-          </View>
-          <Switch
-            value={simulateServerReject}
-            onValueChange={setSimulateServerReject}
-            trackColor={{ false: "#d1d5db", true: "#ef4444" }}
-            thumbColor={simulateServerReject ? "#b91c1c" : "#f4f3f4"}
-          />
-        </View>
-
         {/* Ringkasan Total */}
         <View style={detailStyles.summaryBox}>
           <View style={detailStyles.summaryLine}>
@@ -287,59 +278,109 @@ export default function ProductDetailScreen() {
         </View>
       </View>
 
-      {/* STRUK HASIL TRANSAKSI VISUAL DI LAYAR (JIKA SUKSES) */}
-      {orderReceipt && (
-        <View style={detailStyles.receiptCard}>
-          <Text style={detailStyles.receiptTitle}>Struk Transaksi Berhasil! 🎉</Text>
-          <View style={detailStyles.divider} />
-          <Text style={detailStyles.receiptLine}>No. Pesanan: <Text style={detailStyles.receiptBold}>{orderReceipt.orderId}</Text></Text>
-          <Text style={detailStyles.receiptLine}>Produk: <Text style={detailStyles.receiptBold}>{orderReceipt.productName} ({orderReceipt.quantity} botol)</Text></Text>
-          <Text style={detailStyles.receiptLine}>Subtotal: Rp {orderReceipt.subtotal.toLocaleString("id-ID")}</Text>
-          {orderReceipt.discountAmount > 0 && (
-            <Text style={[detailStyles.receiptLine, { color: "#16a34a" }]}>Diskon: -Rp {orderReceipt.discountAmount.toLocaleString("id-ID")}</Text>
-          )}
-          <Text style={[detailStyles.receiptLine, { fontSize: 16, marginTop: 4 }]}>
-            Total Bayar: <Text style={[detailStyles.receiptBold, { color: "#15803d" }]}>Rp {orderReceipt.finalPrice.toLocaleString("id-ID")}</Text>
-          </Text>
-          <Text style={detailStyles.receiptLine}>Waktu: {orderReceipt.timestamp}</Text>
-          <Text style={detailStyles.receiptLine}>Status: <Text style={{ color: "#16a34a", fontWeight: "bold" }}>{orderReceipt.status}</Text></Text>
-          <Pressable
-            onPress={() => router.replace("/")}
-            style={detailStyles.backCatalogBtn}
-          >
-            <Text style={detailStyles.backCatalogText}>Kembali ke Katalog</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {/* TAMPILAN ERROR VISUAL DI LAYAR (JIKA REJECT) */}
-      {orderError && (
-        <View style={detailStyles.errorCard}>
-          <Text style={detailStyles.errorCardTitle}>Transaksi Ditolak Server ⚠️</Text>
-          <Text style={detailStyles.errorCardText}>{orderError}</Text>
-        </View>
-      )}
-
       {/* Tombol Aksi Transaksi Async */}
       <Pressable
         onPress={handleOrder}
         style={[
           detailStyles.orderButton,
-          (!isAvailable || isProcessingOrder) && detailStyles.disabledButton,
+          isProcessingOrder && detailStyles.disabledButton,
         ]}
-        disabled={!isAvailable || isProcessingOrder}
+        disabled={isProcessingOrder}
       >
         {isProcessingOrder ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <ActivityIndicator color="#ffffff" size="small" />
-            <Text style={detailStyles.orderButtonText}>Menghubungi Server...</Text>
+            <Text style={detailStyles.orderButtonText}>Mengecek Stok & Memproses...</Text>
           </View>
         ) : (
           <Text style={detailStyles.orderButtonText}>
-            {isAvailable ? "Pesan Sekarang (Async .then())" : "Stok Tidak Tersedia"}
+            Pesan Sekarang ({quantity} Botol)
           </Text>
         )}
       </Pressable>
+
+      {/* MODAL POPUP UNTUK STRUK BERHASIL (.resolve) ATAU ERROR (.reject) */}
+      <Modal
+        visible={Boolean(orderReceipt || orderError)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setOrderReceipt(null);
+          setOrderError(null);
+        }}
+      >
+        <View style={detailStyles.modalOverlay}>
+          {orderReceipt && (
+            <View style={[detailStyles.modalContent, detailStyles.receiptCard]}>
+              <Text style={detailStyles.receiptTitle}>Struk Transaksi Berhasil! 🎉</Text>
+              <View style={detailStyles.divider} />
+              <Text style={detailStyles.receiptLine}>
+                No. Pesanan: <Text style={detailStyles.receiptBold}>{orderReceipt.orderId}</Text>
+              </Text>
+              <Text style={detailStyles.receiptLine}>
+                Produk:{" "}
+                <Text style={detailStyles.receiptBold}>
+                  {orderReceipt.productName} ({orderReceipt.quantity} botol)
+                </Text>
+              </Text>
+              <Text style={detailStyles.receiptLine}>
+                Sisa Stok Gudang:{" "}
+                <Text style={detailStyles.receiptBold}>{orderReceipt.remainingStock} botol</Text>
+              </Text>
+              <Text style={detailStyles.receiptLine}>
+                Subtotal: Rp {orderReceipt.subtotal.toLocaleString("id-ID")}
+              </Text>
+              {orderReceipt.discountAmount > 0 && (
+                <Text style={[detailStyles.receiptLine, { color: "#16a34a" }]}>
+                  Diskon: -Rp {orderReceipt.discountAmount.toLocaleString("id-ID")}
+                </Text>
+              )}
+              <Text style={[detailStyles.receiptLine, { fontSize: 16, marginTop: 4 }]}>
+                Total Bayar:{" "}
+                <Text style={[detailStyles.receiptBold, { color: "#15803d" }]}>
+                  Rp {orderReceipt.finalPrice.toLocaleString("id-ID")}
+                </Text>
+              </Text>
+              <Text style={detailStyles.receiptLine}>Waktu: {orderReceipt.timestamp}</Text>
+              <Text style={detailStyles.receiptLine}>
+                Status:{" "}
+                <Text style={{ color: "#16a34a", fontWeight: "bold" }}>{orderReceipt.status}</Text>
+              </Text>
+
+              <View style={detailStyles.modalButtonRow}>
+                <Pressable
+                  onPress={() => setOrderReceipt(null)}
+                  style={[detailStyles.backCatalogBtn, { flex: 1, backgroundColor: "#6b7280" }]}
+                >
+                  <Text style={detailStyles.backCatalogText}>Tutup</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setOrderReceipt(null);
+                    router.replace("/");
+                  }}
+                  style={[detailStyles.backCatalogBtn, { flex: 1 }]}
+                >
+                  <Text style={detailStyles.backCatalogText}>Kembali ke Katalog</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+
+          {orderError && (
+            <View style={[detailStyles.modalContent, detailStyles.errorCard]}>
+              <Text style={detailStyles.errorCardTitle}>Transaksi Ditolak ⚠️</Text>
+              <Text style={detailStyles.errorCardText}>{orderError}</Text>
+              <Pressable
+                onPress={() => setOrderError(null)}
+                style={detailStyles.errorCloseBtn}
+              >
+                <Text style={detailStyles.backCatalogText}>Mengerti</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -611,6 +652,36 @@ const detailStyles = StyleSheet.create({
   errorCardText: {
     fontSize: 14,
     color: "#7f1d1d",
-    marginTop: 4,
+    marginTop: 6,
+    lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 400,
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    marginBottom: 0,
+  },
+  modalButtonRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 14,
+  },
+  errorCloseBtn: {
+    backgroundColor: "#b91c1c",
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 14,
   },
 });

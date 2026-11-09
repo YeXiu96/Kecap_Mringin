@@ -7,6 +7,7 @@ export const productData: Product[] = [
     price: 15000,
     variant: "Manis",
     inStock: true,
+    stock: 5,
     sizeMl: 250,
   },
   {
@@ -15,6 +16,7 @@ export const productData: Product[] = [
     price: 14000,
     variant: "Asin",
     inStock: true,
+    stock: 3,
     sizeMl: 250,
   },
   {
@@ -23,6 +25,7 @@ export const productData: Product[] = [
     price: 20000,
     variant: "Inggris",
     inStock: false,
+    stock: 0,
     sizeMl: 300,
   },
   {
@@ -31,6 +34,7 @@ export const productData: Product[] = [
     price: 16000,
     variant: "Manis",
     inStock: true,
+    stock: 4,
     sizeMl: 250,
   },
 ];

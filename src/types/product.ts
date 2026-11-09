@@ -5,5 +5,6 @@ export interface Product {
   price: number;
   variant: VariantType;
   inStock: boolean;
+  stock: number;
   sizeMl?: number;
 }

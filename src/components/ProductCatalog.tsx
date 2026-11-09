@@ -1,7 +1,8 @@
 import { ProductCard } from "@/components/productCard";
 import { productData } from "@/constants/productData";
 import { Product } from "@/types/product";
-import { useEffect, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Text, TextInput, View } from "react-native";
 
 export function ProductCatalog() {
@@ -11,11 +12,17 @@ export function ProductCatalog() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setProducts(productData);
+      setProducts([...productData]);
       setLoading(false);
     }, 800);
     return () => clearTimeout(timer);
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setProducts([...productData]);
+    }, []),
+  );
 
   const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(query.toLowerCase()),

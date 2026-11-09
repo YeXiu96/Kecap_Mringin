@@ -4,13 +4,13 @@ export interface OrderRequest {
   quantity: number;
   unitPrice: number;
   promoCode?: string;
-  simulateFailure?: boolean;
 }
 
 export interface OrderReceipt {
   orderId: string;
   productName: string;
   quantity: number;
+  remainingStock: number;
   subtotal: number;
   discountAmount: number;
   finalPrice: number;
