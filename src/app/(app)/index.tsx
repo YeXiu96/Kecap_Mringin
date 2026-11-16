@@ -209,10 +209,6 @@ export default function TacticalHQScreen() {
               {user?.email}
             </Text>
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.signOutButton} onPress={signOut} activeOpacity={0.8}>
-            <Text style={styles.signOutButtonText}>Sign Out</Text>
-          </TouchableOpacity>
         </View>
 
         {/* DISPATCH NEW MISSION CARD */}
