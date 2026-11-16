@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { router } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 
@@ -208,6 +209,24 @@ export default function TacticalHQScreen() {
             <Text style={styles.emailSub} numberOfLines={1}>
               {user?.email}
             </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* CODELAB SHORTCUTS ROW */}
+        <View style={styles.shortcutsRow}>
+          <TouchableOpacity
+            style={styles.shortcutBtn}
+            onPress={() => router.push('/vault-demo' as any)}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.shortcutBtnText}>🔐 Codelab 1 (Vault)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.shortcutBtn}
+            onPress={() => router.push('/cloud-health' as any)}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.shortcutBtnText}>☁️ Codelab 2 (Health)</Text>
           </TouchableOpacity>
         </View>
 
@@ -422,6 +441,29 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', marginTop: 30, paddingHorizontal: 16 },
   emptyTitle: { color: '#fafafa', fontSize: 13, fontWeight: '700', marginBottom: 2 },
   emptySubtitle: { color: '#71717a', fontSize: 11, textAlign: 'center', lineHeight: 14 },
+
+  // CODELAB SHORTCUT BUTTONS
+  shortcutsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  shortcutBtn: {
+    flex: 1,
+    backgroundColor: '#121215',
+    borderWidth: 1,
+    borderColor: '#27272a',
+    borderRadius: 8,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shortcutBtnText: {
+    color: '#a1a1aa',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
 
   // MODAL PROFILE STYLES
   modalOverlay: {
